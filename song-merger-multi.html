@@ -1,0 +1,403 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Song Merger</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/lamejs/1.2.1/lame.min.js"></script>
+<style>
+  :root {
+    --bg: #14131a;
+    --panel: #1c1b24;
+    --border: #2c2b38;
+    --amber: #e8a33d;
+    --text: #ece8e0;
+    --dim: #8e8b9c;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: radial-gradient(circle at 20% 0%, #201f2b 0%, var(--bg) 55%);
+    color: var(--text);
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    padding: 32px 16px 60px;
+    display: flex;
+    justify-content: center;
+  }
+  .wrap { width: 100%; max-width: 460px; }
+  h1 { font-size: 26px; margin: 6px 0 6px; }
+  .eyebrow { font-size: 11px; letter-spacing: 1.2px; color: var(--dim); }
+  .sub { font-size: 13.5px; color: var(--dim); line-height: 1.5; margin: 0 0 22px; }
+
+  .track {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 16px 18px; margin-bottom: 12px; border-left: 3px solid var(--accent, var(--amber));
+  }
+  .track-head { display:flex; align-items:center; justify-content:space-between; margin-bottom: 10px; }
+  .track-title { display:flex; align-items:center; gap: 8px; min-width:0; }
+  .num {
+    width: 20px; height: 20px; border-radius: 5px; background: color-mix(in srgb, var(--accent) 20%, transparent);
+    color: var(--accent); font-size: 11px; font-weight: 700; display:flex; align-items:center; justify-content:center;
+    flex-shrink: 0;
+  }
+  .filename { font-size: 13.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .duration { font-size: 11px; color: var(--dim); margin-left: 28px; }
+  .track-actions { display:flex; gap: 4px; flex-shrink: 0; }
+  .icon-btn {
+    background:none; border:none; color: var(--dim); cursor:pointer; font-size: 14px; padding: 3px 5px;
+    border-radius: 4px;
+  }
+  .icon-btn:hover { background: rgba(255,255,255,0.06); }
+  .icon-btn:disabled { opacity: 0.25; cursor: default; }
+  .row { display:flex; justify-content:space-between; font-size: 11px; color: var(--dim); margin-bottom: 4px; }
+  input[type="range"] { width: 100%; height: 4px; margin-bottom: 10px; accent-color: var(--accent, var(--amber)); }
+  .trim-grid { display:flex; gap: 12px; }
+  .trim-grid > div { flex: 1; }
+
+  .add-btn {
+    width: 100%; padding: 13px 0; border-radius: 9px; border: 1.5px dashed var(--border);
+    background: transparent; color: var(--dim); font-size: 13.5px; cursor: pointer; margin-bottom: 20px;
+  }
+  .add-btn:hover { border-color: var(--amber); color: var(--amber); }
+
+  .panel {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 16px 20px; margin-bottom: 20px;
+  }
+  .merge-btn {
+    width: 100%; padding: 13px 0; border-radius: 9px; border: none; font-size: 14px;
+    font-weight: 600; cursor: pointer; background: var(--amber); color: #1a1508; margin-bottom: 20px;
+  }
+  .merge-btn:disabled { background: var(--border); color: var(--dim); cursor: not-allowed; }
+  .error { font-size: 12.5px; color: #e87d7d; margin-bottom: 16px; line-height: 1.5; }
+  .result-row { display:flex; gap: 10px; }
+  .result-row button, .result-row a {
+    flex:1; display:flex; align-items:center; justify-content:center; gap: 8px; padding: 10px 0;
+    border-radius: 7px; font-size: 13px; cursor: pointer; text-decoration:none;
+  }
+  .btn-outline { border: 1px solid var(--border); background: transparent; color: var(--text); }
+  .btn-solid { border: none; background: var(--amber); color: #1a1508; font-weight: 600; }
+  .hidden { display: none !important; }
+  .meta { font-size: 11px; color: var(--dim); margin-bottom: 12px; }
+  .empty-msg { font-size: 13px; color: var(--dim); text-align: center; padding: 20px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="eyebrow">WEB AUDIO</div>
+  <h1>Song Merger</h1>
+  <p class="sub">Add as many tracks as you like, trim each one, reorder them, then stitch them together with a crossfade between every transition. Export as MP3.</p>
+
+  <div id="trackList"></div>
+  <div class="empty-msg hidden" id="emptyMsg">No tracks yet — add one below to get started.</div>
+
+  <button class="add-btn" id="addBtn">+ Add track(s)</button>
+  <input type="file" id="fileInput" accept="audio/*" multiple class="hidden" />
+
+  <div class="panel">
+    <div class="row" style="margin-bottom:10px;"><span>TRANSITION LENGTH (between each track)</span><span id="crossfadeVal">2.0s</span></div>
+    <input type="range" id="crossfade" min="0" max="8" step="0.1" value="2" style="accent-color: var(--amber);" />
+  </div>
+
+  <div class="error hidden" id="errorBox"></div>
+
+  <button class="merge-btn" id="mergeBtn" disabled>Merge &amp; export MP3</button>
+
+  <div class="panel hidden" id="resultPanel">
+    <div class="meta" id="resultMeta"></div>
+    <audio id="resultAudio" class="hidden"></audio>
+    <div class="result-row">
+      <button class="btn-outline" id="playBtn">▶ Preview</button>
+      <a class="btn-solid" id="downloadLink" download="merged-song.mp3">⬇ Download MP3</a>
+    </div>
+  </div>
+</div>
+
+<script>
+const COLORS = ['#e8a33d', '#3fb8c9', '#a889e0', '#e8747a', '#7ec98f', '#e0c34a'];
+let tracks = []; // { id, name, buffer, trimStart, trimEnd, volume }
+let nextId = 1;
+
+function formatTime(s) {
+  if (!isFinite(s) || s < 0) s = 0;
+  const m = Math.floor(s / 60);
+  const sec = Math.floor(s % 60);
+  return m + ':' + sec.toString().padStart(2, '0');
+}
+
+function hideError() { document.getElementById('errorBox').classList.add('hidden'); }
+function showError(msg) {
+  const box = document.getElementById('errorBox');
+  box.textContent = msg;
+  box.classList.remove('hidden');
+}
+function clearResult() { document.getElementById('resultPanel').classList.add('hidden'); }
+function updateMergeButton() {
+  document.getElementById('mergeBtn').disabled = tracks.length < 2;
+}
+
+function render() {
+  const list = document.getElementById('trackList');
+  const emptyMsg = document.getElementById('emptyMsg');
+  list.innerHTML = '';
+  emptyMsg.classList.toggle('hidden', tracks.length > 0);
+
+  tracks.forEach((t, i) => {
+    const color = COLORS[i % COLORS.length];
+    const card = document.createElement('div');
+    card.className = 'track';
+    card.style.setProperty('--accent', color);
+    card.innerHTML = `
+      <div class="track-head">
+        <div class="track-title">
+          <div class="num">${i + 1}</div>
+          <div>
+            <div class="filename">${t.name}</div>
+            <div class="duration">${formatTime(t.trimEnd - t.trimStart)} of ${formatTime(t.buffer.duration)}</div>
+          </div>
+        </div>
+        <div class="track-actions">
+          <button class="icon-btn" data-act="up" ${i === 0 ? 'disabled' : ''}>↑</button>
+          <button class="icon-btn" data-act="down" ${i === tracks.length - 1 ? 'disabled' : ''}>↓</button>
+          <button class="icon-btn" data-act="remove">✕</button>
+        </div>
+      </div>
+      <div class="trim-grid">
+        <div>
+          <div class="row"><span>Trim start</span><span data-out="startVal">${formatTime(t.trimStart)}</span></div>
+          <input type="range" data-act="start" min="0" max="${t.buffer.duration}" step="0.1" value="${t.trimStart}" />
+        </div>
+        <div>
+          <div class="row"><span>Trim end</span><span data-out="endVal">${formatTime(t.trimEnd)}</span></div>
+          <input type="range" data-act="end" min="0" max="${t.buffer.duration}" step="0.1" value="${t.trimEnd}" />
+        </div>
+      </div>
+      <div class="row"><span>Volume</span><span data-out="volVal">${Math.round(t.volume * 100)}%</span></div>
+      <input type="range" data-act="vol" min="0" max="1.5" step="0.01" value="${t.volume}" />
+    `;
+
+    card.querySelector('[data-act="up"]').addEventListener('click', () => {
+      [tracks[i - 1], tracks[i]] = [tracks[i], tracks[i - 1]];
+      clearResult(); render();
+    });
+    card.querySelector('[data-act="down"]').addEventListener('click', () => {
+      [tracks[i + 1], tracks[i]] = [tracks[i], tracks[i + 1]];
+      clearResult(); render();
+    });
+    card.querySelector('[data-act="remove"]').addEventListener('click', () => {
+      tracks.splice(i, 1);
+      clearResult(); render(); updateMergeButton();
+    });
+    const startSlider = card.querySelector('[data-act="start"]');
+    const endSlider = card.querySelector('[data-act="end"]');
+    const volSlider = card.querySelector('[data-act="vol"]');
+    startSlider.addEventListener('input', () => {
+      let v = parseFloat(startSlider.value);
+      if (v >= t.trimEnd) v = Math.max(0, t.trimEnd - 0.1);
+      t.trimStart = v;
+      card.querySelector('[data-out="startVal"]').textContent = formatTime(v);
+      card.querySelector('.duration').textContent = formatTime(t.trimEnd - t.trimStart) + ' of ' + formatTime(t.buffer.duration);
+      clearResult();
+    });
+    endSlider.addEventListener('input', () => {
+      let v = parseFloat(endSlider.value);
+      if (v <= t.trimStart) v = Math.min(t.buffer.duration, t.trimStart + 0.1);
+      t.trimEnd = v;
+      card.querySelector('[data-out="endVal"]').textContent = formatTime(v);
+      card.querySelector('.duration').textContent = formatTime(t.trimEnd - t.trimStart) + ' of ' + formatTime(t.buffer.duration);
+      clearResult();
+    });
+    volSlider.addEventListener('input', () => {
+      t.volume = parseFloat(volSlider.value);
+      card.querySelector('[data-out="volVal"]').textContent = Math.round(t.volume * 100) + '%';
+      clearResult();
+    });
+
+    list.appendChild(card);
+  });
+}
+
+document.getElementById('addBtn').addEventListener('click', () => document.getElementById('fileInput').click());
+
+document.getElementById('fileInput').addEventListener('change', async (e) => {
+  const files = Array.from(e.target.files);
+  if (!files.length) return;
+  hideError();
+  for (const file of files) {
+    try {
+      const arrayBuf = await file.arrayBuffer();
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const buffer = await ctx.decodeAudioData(arrayBuf);
+      ctx.close();
+      tracks.push({
+        id: nextId++,
+        name: file.name,
+        buffer,
+        trimStart: 0,
+        trimEnd: buffer.duration,
+        volume: 1,
+      });
+    } catch (err) {
+      showError(`Couldn't read "${file.name}" — try a different format (MP3, WAV, M4A).`);
+    }
+  }
+  e.target.value = '';
+  clearResult();
+  render();
+  updateMergeButton();
+});
+
+const crossfadeSlider = document.getElementById('crossfade');
+const crossfadeVal = document.getElementById('crossfadeVal');
+crossfadeSlider.addEventListener('input', () => {
+  crossfadeVal.textContent = parseFloat(crossfadeSlider.value).toFixed(1) + 's';
+  clearResult();
+});
+
+function trimBuffer(ctx, buffer, start, end) {
+  const sampleRate = buffer.sampleRate;
+  const startSample = Math.floor(start * sampleRate);
+  const endSample = Math.min(buffer.length, Math.floor(end * sampleRate));
+  const length = Math.max(1, endSample - startSample);
+  const newBuffer = ctx.createBuffer(buffer.numberOfChannels, length, sampleRate);
+  for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
+    const data = buffer.getChannelData(ch).subarray(startSample, endSample);
+    newBuffer.copyToChannel(new Float32Array(data), ch);
+  }
+  return newBuffer;
+}
+
+function floatTo16BitPCM(float32Array) {
+  const out = new Int16Array(float32Array.length);
+  for (let i = 0; i < float32Array.length; i++) {
+    let s = Math.max(-1, Math.min(1, float32Array[i]));
+    out[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+  }
+  return out;
+}
+
+function encodeMP3(audioBuffer, kbps) {
+  const channels = audioBuffer.numberOfChannels;
+  const sampleRate = audioBuffer.sampleRate;
+  const encoder = new lamejs.Mp3Encoder(channels, sampleRate, kbps || 128);
+  const mp3Data = [];
+  const blockSize = 1152;
+  const left = floatTo16BitPCM(audioBuffer.getChannelData(0));
+  const right = channels > 1 ? floatTo16BitPCM(audioBuffer.getChannelData(1)) : null;
+
+  for (let i = 0; i < left.length; i += blockSize) {
+    const leftChunk = left.subarray(i, i + blockSize);
+    let buf;
+    if (right) {
+      const rightChunk = right.subarray(i, i + blockSize);
+      buf = encoder.encodeBuffer(leftChunk, rightChunk);
+    } else {
+      buf = encoder.encodeBuffer(leftChunk);
+    }
+    if (buf.length > 0) mp3Data.push(buf);
+  }
+  const last = encoder.flush();
+  if (last.length > 0) mp3Data.push(last);
+  return new Blob(mp3Data, { type: 'audio/mp3' });
+}
+
+document.getElementById('mergeBtn').addEventListener('click', async () => {
+  if (tracks.length < 2) return;
+  hideError();
+  clearResult();
+  const btn = document.getElementById('mergeBtn');
+  btn.disabled = true;
+  btn.textContent = 'Merging…';
+
+  try {
+    const tempCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const crossfade = parseFloat(document.getElementById('crossfade').value);
+
+    const trimmed = tracks.map(t => ({
+      buffer: trimBuffer(tempCtx, t.buffer, t.trimStart, t.trimEnd),
+      volume: t.volume,
+    }));
+    tempCtx.close();
+
+    // Compute per-track fade in/out and position, chaining crossfades
+    const n = trimmed.length;
+    const fadeIn = new Array(n).fill(0);
+    const fadeOut = new Array(n).fill(0);
+    const pos = new Array(n).fill(0);
+
+    let cursor = 0;
+    for (let i = 0; i < n; i++) {
+      const dur = trimmed[i].buffer.duration;
+      if (i === 0) {
+        pos[i] = 0;
+      } else {
+        const fade = Math.min(crossfade, trimmed[i - 1].buffer.duration, dur);
+        fadeIn[i] = fade;
+        fadeOut[i - 1] = fade;
+        pos[i] = cursor - fade;
+      }
+      cursor = pos[i] + dur;
+    }
+    const totalDuration = cursor;
+    const sampleRate = Math.max(...trimmed.map(t => t.buffer.sampleRate));
+    const numChan = 2;
+
+    const offlineCtx = new OfflineAudioContext(numChan, Math.ceil(totalDuration * sampleRate), sampleRate);
+
+    function place(buffer, start, volume, fIn, fOut) {
+      const src = offlineCtx.createBufferSource();
+      src.buffer = buffer;
+      const gain = offlineCtx.createGain();
+      src.connect(gain);
+      gain.connect(offlineCtx.destination);
+      const dur = buffer.duration;
+      const t0 = offlineCtx.currentTime + Math.max(0, start);
+      if (fIn > 0) {
+        gain.gain.setValueAtTime(0.0001, t0);
+        gain.gain.exponentialRampToValueAtTime(volume, t0 + fIn);
+      } else {
+        gain.gain.setValueAtTime(volume, t0);
+      }
+      if (fOut > 0) {
+        gain.gain.setValueAtTime(volume, t0 + dur - fOut);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+      }
+      src.start(Math.max(0, start));
+    }
+
+    for (let i = 0; i < n; i++) {
+      place(trimmed[i].buffer, pos[i], trimmed[i].volume, fadeIn[i], fadeOut[i]);
+    }
+
+    const rendered = await offlineCtx.startRendering();
+    const blob = encodeMP3(rendered, 128);
+    const url = URL.createObjectURL(blob);
+
+    document.getElementById('resultMeta').textContent =
+      'MERGED · ' + tracks.length + ' tracks · ' + formatTime(rendered.duration) + ' · MP3 128kbps';
+    const audioEl = document.getElementById('resultAudio');
+    audioEl.src = url;
+    document.getElementById('downloadLink').href = url;
+    document.getElementById('resultPanel').classList.remove('hidden');
+
+    const playBtn = document.getElementById('playBtn');
+    playBtn.textContent = '▶ Preview';
+    playBtn.onclick = () => {
+      if (audioEl.paused) { audioEl.play(); playBtn.textContent = '⏸ Pause'; }
+      else { audioEl.pause(); playBtn.textContent = '▶ Preview'; }
+    };
+    audioEl.onended = () => { playBtn.textContent = '▶ Preview'; };
+  } catch (err) {
+    console.error(err);
+    showError('Merging failed. Try smaller files, fewer tracks, or a different browser.');
+  } finally {
+    btn.textContent = 'Merge & export MP3';
+    updateMergeButton();
+  }
+});
+
+render();
+updateMergeButton();
+</script>
+</body>
+</html>
